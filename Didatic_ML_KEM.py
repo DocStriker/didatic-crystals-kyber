@@ -24,6 +24,24 @@ class DidaticMLKEM:
 
         return mu_vec
 
+    def compact_mu(self, mu_vec):
+        mu_centered = np.where(
+            mu_vec > self.q//2,
+            mu_vec - self.q,
+            mu_vec
+        )
+
+        bits_rec = (
+            np.abs(mu_centered)
+            >
+            self.q//4
+        ).astype(np.uint8)
+
+        # E por fim nessa etapa temos nosso mu recuperado em bytes
+        mu_rec = np.packbits(bits_rec)
+
+        return mu_rec.tobytes()
+
     def KeyGen(self):
         # Generate a random secret key
         secret_key = np.array([self.sample_eta() for _ in range(self.k)])
@@ -43,7 +61,8 @@ class DidaticMLKEM:
       
         return public_key, secret_key
 
-    def G(self, mu, hash_pk):
+    @staticmethod
+    def G(mu, hash_pk):
         # Concatenate mu and hash_pk
         concatenated = mu + hash_pk
 
@@ -54,12 +73,35 @@ class DidaticMLKEM:
 
         return K_bar, r
 
-    def prf(seed, nonce, outlen):
+    def PRF(self,seed, nonce, outlen):
         shake = hashlib.shake_256()
         shake.update(seed)
         shake.update(bytes([nonce]))
         
         return shake.digest(outlen)
+
+    def seeds(self, r, n_vectors):
+        return np.array([self.PRF(r, n, 32) for n in range(n_vectors)])
+
+    def GenCiphertext(self, r, t, A, mu_vec):
+        seeds = self.seeds(r, 5)  # Generate 5 seeds using the prf function
+        
+        random_secret = np.array([
+            self.sample_eta_encaps(seeds[0]),
+            self.sample_eta_encaps(seeds[1])
+        ])
+
+        error_u = np.array([
+            self.sample_eta_encaps(seeds[2]),
+            self.sample_eta_encaps(seeds[3])
+        ])
+
+        error_v = self.sample_eta_encaps(seeds[4])
+
+        u = (A.T @ random_secret + error_u) % self.q
+        v = (np.sum(t * random_secret, axis=0) + error_v + mu_vec) % self.q
+
+        return u, v
 
     def Encapsulate(self, public_key):
         t, A, hash_pk = public_key
@@ -67,10 +109,27 @@ class DidaticMLKEM:
         # Generate a random byte mu
         mu = np.random.bytes(1)
         mu_vec = self.descompact_mu(mu)
-        
-        
-        
+
+        K_bar, r = self.G(mu, hash_pk)
+
+        ciphertext = self.GenCiphertext(r, t, A, mu_vec)
+
         return ciphertext
+
+    def Decapsulate(self, ciphertext, secret_key, public_key):
+        sk = secret_key
+        t, A, hash_pk = public_key
+
+        d = np.sum(sk * ciphertext[0], axis=0) % self.q
+        mu_d = (ciphertext[1] - d) % self.q
+
+        mu_rec = self.compact_mu(mu_d)
+
+        K_bar_recovered, r_recovered = self.G(mu_rec, hash_pk)
+
+        ciphertext_recomputed = self.GenCiphertext(r_recovered, t, A, self.descompact_mu(mu_rec))
+
+        return ciphertext_recomputed
 
 
 if __name__ == "__main__":
@@ -83,3 +142,11 @@ if __name__ == "__main__":
     public_key, secret_key = kem.KeyGen()
     print("Public Key:", public_key)
     print("Secret Key:", secret_key)
+
+    # Encapsulate a key using the public key
+    ciphertext = kem.Encapsulate(public_key)
+    print("Cipher Text:", ciphertext)
+
+    # Decapsulate the key using the ciphertext and secret key
+    recovered_ciphertext = kem.Decapsulate(ciphertext, secret_key, public_key)
+    print("Recovered Cipher Text:", recovered_ciphertext)
