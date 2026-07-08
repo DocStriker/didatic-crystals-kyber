@@ -57,7 +57,11 @@ class DidaticMLKEM:
         pk_compress = t.tobytes() + A.tobytes()
         hash_pk = hashlib.shake_256(pk_compress).digest(32)
 
-        public_key = (t, A, hash_pk)
+        public_key = {
+            "t": t,
+            "A": A,
+            "hash_pk": hash_pk
+        }
 
         secret_key = {
             "s": s,
@@ -120,15 +124,13 @@ class DidaticMLKEM:
         return u, v
 
     def Encapsulate(self, public_key):
-        t, A, hash_pk = public_key
-
         # Generate a random byte mu
         mu = np.random.bytes(1)
         mu_vec = self.descompact_mu(mu)
 
-        K_bar, r = self.G(mu, hash_pk)
+        K_bar, r = self.G(mu, public_key["hash_pk"])
 
-        ciphertext = self.GenCiphertext(r, t, A, mu_vec)
+        ciphertext = self.GenCiphertext(r, public_key["t"], public_key["A"], mu_vec)
 
         K = self.KDF(K_bar, ciphertext)
 
@@ -136,16 +138,15 @@ class DidaticMLKEM:
 
     def Decapsulate(self, ciphertext, secret_key):
         sk = secret_key
-        t, A, hash_pk = sk["pk"]
 
         d = np.sum(sk["s"] * ciphertext[0], axis=0) % self.q
         mu_d = (ciphertext[1] - d) % self.q
 
         mu_rec = self.compact_mu(mu_d)
 
-        K_bar_recovered, r_recovered = self.G(mu_rec, hash_pk)
+        K_bar_recovered, r_recovered = self.G(mu_rec, sk["pk"]["hash_pk"])
 
-        ciphertext_recomputed = self.GenCiphertext(r_recovered, t, A, self.descompact_mu(mu_rec))
+        ciphertext_recomputed = self.GenCiphertext(r_recovered, sk["pk"]["t"], sk["pk"]["A"], self.descompact_mu(mu_rec))
 
         valid = (
             np.array_equal(ciphertext[0], ciphertext_recomputed[0])
