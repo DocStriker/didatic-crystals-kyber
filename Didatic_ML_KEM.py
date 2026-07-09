@@ -1,8 +1,6 @@
 import hashlib
 from typing import Any, Dict, Tuple
-
 import numpy as np
-
 
 class DidaticMLKEM:
     """A didactic, simplified implementation of a Kyber-like key encapsulation flow."""
@@ -56,7 +54,6 @@ class DidaticMLKEM:
 
     def Encapsulate(self, public_key: Dict[str, Any]) -> Tuple[Tuple[np.ndarray, np.ndarray], bytes]:
         """Encapsulate a random message into a ciphertext and derive a shared key."""
-        self._validate_public_key(public_key)
 
         # Generate a one-byte message-like value and expand it into a small vector.
         mu = np.random.bytes(1)
@@ -72,8 +69,6 @@ class DidaticMLKEM:
 
     def Decapsulate(self, ciphertext: Tuple[np.ndarray, np.ndarray], secret_key: Dict[str, Any]) -> bytes:
         """Recover a shared key from a ciphertext using the secret key."""
-        self._validate_ciphertext(ciphertext)
-        self._validate_secret_key(secret_key)
 
         # Recover the approximate message vector from the ciphertext.
         d = np.sum(secret_key["s"] * ciphertext[0], axis=0) % self.q
@@ -177,30 +172,6 @@ class DidaticMLKEM:
         u = (A.T @ random_secret + error_u) % self.q
         v = (np.sum(t * random_secret, axis=0) + error_v + mu_vec) % self.q
         return u, v
-
-    def _validate_public_key(self, public_key: Dict[str, Any]) -> None:
-        """Check that the public key contains the expected fields."""
-        required = {"t", "A", "hash_pk"}
-        missing = required.difference(public_key.keys())
-        if missing:
-            raise ValueError(f"Public key is missing required fields: {sorted(missing)}")
-
-    def _validate_secret_key(self, secret_key: Dict[str, Any]) -> None:
-        """Check that the secret key contains the expected fields."""
-        required = {"s", "pk", "hash_pk", "z"}
-        missing = required.difference(secret_key.keys())
-        if missing:
-            raise ValueError(f"Secret key is missing required fields: {sorted(missing)}")
-
-    def _validate_ciphertext(self, ciphertext: Tuple[np.ndarray, np.ndarray]) -> None:
-        """Ensure that the ciphertext has the expected shape and components."""
-        if not isinstance(ciphertext, tuple) or len(ciphertext) != 2:
-            raise ValueError("Ciphertext must be a tuple containing two arrays")
-
-        u, v = ciphertext
-        if not isinstance(u, np.ndarray) or not isinstance(v, np.ndarray):
-            raise ValueError("Ciphertext components must be numpy arrays")
-
 
 if __name__ == "__main__":
     kem = DidaticMLKEM()
